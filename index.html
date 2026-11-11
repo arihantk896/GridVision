@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GridVision | Distribution Network Intelligence</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Local Leaflet CSS & JS (Zero external CDN dependency) -->
+  <link rel="stylesheet" href="/static/css/leaflet.css" />
+  <script src="/static/js/leaflet.js"></script>
+  
+  <!-- Local Chart.js (Zero external CDN dependency) -->
+  <script src="/static/js/chart.umd.min.js"></script>
+
+  <!-- Custom High-Contrast Stylesheet -->
+  <link rel="stylesheet" href="/static/css/style.css?v=2.7">
+</head>
+<body class="min-h-screen text-slate-100 flex flex-col bg-slate-950">
+
+  <!-- Top Navigation Header -->
+  <header class="border-b border-slate-700/80 bg-slate-900/90 backdrop-blur-md sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      
+      <!-- Logo & System Identity -->
+      <div class="flex items-center space-x-3">
+        <div class="w-9 h-9 rounded-lg bg-cyan-950 border border-cyan-400 flex items-center justify-center text-cyan-300 font-bold font-mono text-sm shadow-[0_0_15px_rgba(6,182,212,0.35)]">
+          GV
+        </div>
+        <div>
+          <div class="flex items-center space-x-2">
+            <span class="text-base font-bold tracking-tight text-white">GridVision</span>
+            <span class="text-xs px-2 py-0.5 rounded bg-slate-800 text-cyan-300 font-mono font-semibold border border-slate-700">IEEE 33-Bus</span>
+          </div>
+          <p class="text-xs text-slate-300 font-medium">Radial Distribution Power Flow & Distributed Generation Analyzer</p>
+        </div>
+      </div>
+
+      <!-- System Benchmark Spec & Status -->
+      <div class="hidden md:flex items-center space-x-6 text-xs">
+        <div class="border-r border-slate-700 pr-6">
+          <div class="text-slate-300 font-mono">Test Feeder</div>
+          <div class="font-bold text-white">IEEE 33-Bus Radial</div>
+        </div>
+        <div class="border-r border-slate-700 pr-6">
+          <div class="text-slate-300 font-mono">Base Rating</div>
+          <div class="font-bold text-white">12.66 kV &middot; 10 MVA</div>
+        </div>
+        <div>
+          <div class="text-slate-300 font-mono">Solver Status</div>
+          <span id="solver-badge" class="status-pill status-nominal">BFS Converged</span>
+        </div>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- Main Content Area -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+    <!-- KPI Metrics Ribbon -->
+    <section class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3.5">
+      
+      <div class="glass-panel p-4 flex flex-col justify-between">
+        <div class="text-xs font-bold text-slate-300 uppercase tracking-wider">Total Active Load</div>
+        <div id="metric-total-load" class="text-xl font-bold font-mono text-white mt-1">3,715 kW</div>
+        <div id="metric-total-load-sub" class="text-xs text-slate-300 font-mono mt-0.5">2,300 kVAR reactive</div>
+      </div>
+
+      <div class="glass-panel p-4 flex flex-col justify-between">
+        <div class="text-xs font-bold text-slate-300 uppercase tracking-wider">Total DG Output</div>
+        <div id="metric-total-gen" class="text-xl font-bold font-mono text-cyan-300 mt-1">0.0 kW</div>
+        <div id="metric-total-gen-sub" class="text-xs text-slate-300 font-mono mt-0.5">0.0 kVAR injected</div>
+      </div>
+
+      <div class="glass-panel p-4 flex flex-col justify-between">
+        <div class="text-xs font-bold text-slate-300 uppercase tracking-wider">Active Loss (P)</div>
+        <div id="metric-ploss" class="text-xl font-bold font-mono text-rose-400 mt-1">202.68 kW</div>
+        <div id="metric-ploss-sub" class="text-xs text-slate-300 font-mono mt-0.5">5.46% of load</div>
+      </div>
+
+      <div class="glass-panel p-4 flex flex-col justify-between">
+        <div class="text-xs font-bold text-slate-300 uppercase tracking-wider">Reactive Loss (Q)</div>
+        <div id="metric-qloss" class="text-xl font-bold font-mono text-indigo-300 mt-1">135.14 kVAR</div>
+        <div class="text-xs text-slate-300 font-mono mt-0.5">Inductive series drop</div>
+      </div>
+
+      <div class="glass-panel p-4 flex flex-col justify-between">
+        <div class="text-xs font-bold text-slate-300 uppercase tracking-wider">Minimum Voltage</div>
+        <div id="metric-min-v" class="text-xl font-bold font-mono text-amber-300 mt-1">0.9131 p.u.</div>
+        <div id="metric-min-v-sub" class="text-xs text-slate-300 font-mono mt-0.5">Bus 18</div>
+      </div>
+
+      <div class="glass-panel p-4 flex flex-col justify-between">
+        <div class="text-xs font-bold text-slate-300 uppercase tracking-wider">Voltage Status</div>
+        <div id="metric-violations" class="mt-2">
+          <span class="status-pill status-warning">Calculating...</span>
+        </div>
+        <div class="text-xs text-slate-300 font-mono mt-0.5">Limits: 0.95 - 1.05 p.u.</div>
+      </div>
+
+    </section>
+
+    <!-- Interactive Grid: DG Control Station & Topology Visualization -->
+    <section class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+      <!-- Left Column: DG Configuration Station -->
+      <div class="lg:col-span-4 space-y-4">
+        
+        <div class="glass-panel p-5 space-y-4">
+          <div class="flex items-center justify-between border-b border-slate-700/80 pb-3">
+            <div>
+              <h2 class="text-sm font-bold text-white uppercase tracking-wider">DG Injection Station</h2>
+              <p class="text-xs text-slate-300">Dispatch rooftop solar PV / inverter injections</p>
+            </div>
+            <div id="loading-indicator" class="hidden">
+              <svg class="animate-spin h-4 w-4 text-cyan-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+              </svg>
+            </div>
+          </div>
+
+          <!-- Target Bus Selection (Prominent and Highly Visible) -->
+          <div class="space-y-2">
+            <div class="flex justify-between items-center">
+              <label for="dg-bus-select" class="text-xs font-bold text-cyan-300 uppercase tracking-wide">
+                Target Node (Select Bus)
+              </label>
+              <span id="selected-bus-badge" class="font-mono text-xs font-bold text-cyan-300 bg-cyan-950 px-2 py-0.5 rounded border border-cyan-500/50">
+                Bus 18
+              </span>
+            </div>
+            <select id="dg-bus-select" class="font-mono font-bold">
+              <option value="2">Bus 2</option>
+              <option value="3">Bus 3</option>
+              <option value="4">Bus 4</option>
+              <option value="5">Bus 5</option>
+              <option value="6">Bus 6</option>
+              <option value="7">Bus 7</option>
+              <option value="8">Bus 8</option>
+              <option value="9">Bus 9</option>
+              <option value="10">Bus 10</option>
+              <option value="11">Bus 11</option>
+              <option value="12">Bus 12</option>
+              <option value="13">Bus 13</option>
+              <option value="14">Bus 14</option>
+              <option value="15">Bus 15</option>
+              <option value="16">Bus 16</option>
+              <option value="17">Bus 17</option>
+              <option value="18" selected>Bus 18 (Terminal &middot; Highest Voltage Drop)</option>
+              <option value="19">Bus 19</option>
+              <option value="20">Bus 20</option>
+              <option value="21">Bus 21</option>
+              <option value="22">Bus 22</option>
+              <option value="23">Bus 23</option>
+              <option value="24">Bus 24</option>
+              <option value="25">Bus 25</option>
+              <option value="26">Bus 26</option>
+              <option value="27">Bus 27</option>
+              <option value="28">Bus 28</option>
+              <option value="29">Bus 29</option>
+              <option value="30">Bus 30</option>
+              <option value="31">Bus 31</option>
+              <option value="32">Bus 32</option>
+              <option value="33">Bus 33</option>
+            </select>
+          </div>
+
+          <!-- Active Power Slider (Only Slider, Direct Value Badge) -->
+          <div class="space-y-1.5 pt-1">
+            <div class="flex justify-between items-center">
+              <span class="text-xs font-bold text-white uppercase tracking-wider">Active Power Injection (P)</span>
+              <span id="dg-p-val" class="font-mono text-sm font-bold text-cyan-300 bg-cyan-950/80 px-2.5 py-0.5 rounded border border-cyan-500/40 shadow-sm">
+                200 kW
+              </span>
+            </div>
+            <input type="range" id="dg-p-slider" min="0" max="1000" step="10" value="200">
+            <div class="flex justify-between text-[11px] text-slate-400 font-mono">
+              <span>0 kW</span>
+              <span>500 kW</span>
+              <span>1000 kW</span>
+            </div>
+          </div>
+
+          <!-- Reactive Power Slider (Only Slider, Direct Value Badge) -->
+          <div class="space-y-1.5 pt-1">
+            <div class="flex justify-between items-center">
+              <span class="text-xs font-bold text-white uppercase tracking-wider">Reactive Compensation (Q)</span>
+              <span id="dg-q-val" class="font-mono text-sm font-bold text-indigo-300 bg-indigo-950/80 px-2.5 py-0.5 rounded border border-indigo-500/40 shadow-sm">
+                0 kVAR
+              </span>
+            </div>
+            <input type="range" id="dg-q-slider" min="-300" max="300" step="10" value="0">
+            <div class="flex justify-between text-[11px] text-slate-400 font-mono">
+              <span>-300 kVAR (Inductive)</span>
+              <span>0 (Neutral)</span>
+              <span>+300 kVAR (Capacitive)</span>
+            </div>
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="flex space-x-2 pt-2">
+            <button id="btn-apply-dg" class="flex-1 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold py-2.5 px-3 rounded-md text-xs transition duration-150 shadow-[0_0_12px_rgba(6,182,212,0.3)]">
+              Apply / Update Unit
+            </button>
+            <button id="btn-clear-dg" class="bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold py-2.5 px-3 rounded-md text-xs transition duration-150 border border-slate-700">
+              Clear All
+            </button>
+          </div>
+
+          <!-- Benchmarked Injection Presets -->
+          <div class="pt-2 border-t border-slate-700/80">
+            <div class="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">Preset Scenarios</div>
+            <div class="grid grid-cols-2 gap-2 text-xs">
+              <button id="preset-bus18" class="p-2.5 rounded bg-slate-800/80 hover:bg-slate-800 border border-slate-700 text-left text-slate-200 transition">
+                <div class="font-bold text-white">Optimal Bus 18</div>
+                <div class="text-xs text-cyan-300 font-mono">500 kW &middot; -24% Loss</div>
+              </button>
+              <button id="preset-multi" class="p-2.5 rounded bg-slate-800/80 hover:bg-slate-800 border border-slate-700 text-left text-slate-200 transition">
+                <div class="font-bold text-white">Multi-Bus Solar</div>
+                <div class="text-xs text-cyan-300 font-mono">Buses 14, 18, 32</div>
+              </button>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Active DG Inventory & Voltage Threshold Settings -->
+        <div class="glass-panel p-5 space-y-3">
+          <h3 class="text-xs font-bold text-slate-200 uppercase tracking-wider">Active Generation Units</h3>
+          <div id="active-dg-list" class="max-h-36 overflow-y-auto space-y-1.5 pr-1"></div>
+
+          <div class="pt-3 border-t border-slate-700 flex items-center justify-between text-xs">
+            <span class="text-slate-300 font-medium">Statutory Limits (p.u.)</span>
+            <div class="flex items-center space-x-2">
+              <input type="number" id="vmin-input" value="0.95" step="0.01" min="0.85" max="0.98" class="w-16 px-1.5 py-0.5 text-center font-mono font-bold text-rose-300">
+              <span class="text-slate-400">to</span>
+              <input type="number" id="vmax-input" value="1.05" step="0.01" min="1.02" max="1.15" class="w-16 px-1.5 py-0.5 text-center font-mono font-bold text-amber-300">
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Right Column: Interactive Network Visualizer (Leaflet Map & Schematic SVG) -->
+      <div class="lg:col-span-8 flex flex-col space-y-4">
+        
+        <div class="glass-panel p-4 flex-1 flex flex-col">
+          
+          <div class="flex items-center justify-between pb-3 border-b border-slate-700/80">
+            <div>
+              <h2 class="text-sm font-bold text-white uppercase tracking-wider">Radial Feeder Network Topology</h2>
+              <p class="text-xs text-slate-300">Click any bus node to tune DG injection directly</p>
+            </div>
+
+            <!-- View Switcher -->
+            <div class="flex bg-slate-900 p-0.5 rounded-lg border border-slate-700">
+              <button id="tab-map" class="px-3 py-1.5 text-xs font-bold rounded-md bg-cyan-950 text-cyan-300 border border-cyan-500/50 transition">
+                Geographic Map (Leaflet)
+              </button>
+              <button id="tab-schematic" class="px-3 py-1.5 text-xs font-medium rounded-md text-slate-300 hover:text-white transition">
+                Schematic Diagram (SVG)
+              </button>
+            </div>
+          </div>
+
+          <!-- View 1: Leaflet Interactive Map Container -->
+          <div id="leaflet-container" class="relative mt-3 rounded-lg overflow-hidden border border-slate-700/80 flex-1 min-h-[380px]">
+            <div id="leaflet-map" class="w-full h-full min-h-[380px]"></div>
+          </div>
+
+          <!-- View 2: SVG Schematic Container -->
+          <div id="schematic-container" class="hidden mt-3 rounded-lg overflow-x-auto border border-slate-700/80 bg-slate-950 p-4 min-h-[380px] flex items-center justify-center">
+            <svg id="schematic-svg" viewBox="0 0 1050 280" class="w-full h-auto max-h-[360px]"></svg>
+          </div>
+
+          <!-- Legend Bar -->
+          <div class="mt-3 pt-2.5 border-t border-slate-700/80 flex flex-wrap items-center justify-between text-xs text-slate-300 font-mono">
+            <div class="flex items-center space-x-4">
+              <span class="flex items-center space-x-1.5"><span class="w-3 h-3 rounded-full bg-indigo-400 inline-block"></span><span class="font-bold text-white">Substation (Bus 1)</span></span>
+              <span class="flex items-center space-x-1.5"><span class="w-3 h-3 rounded-full bg-emerald-400 inline-block"></span><span class="font-bold text-white">Nominal (&ge; 0.95 p.u.)</span></span>
+              <span class="flex items-center space-x-1.5"><span class="w-3 h-3 rounded-full bg-rose-400 inline-block"></span><span class="font-bold text-white">Under-voltage (&lt; 0.95 p.u.)</span></span>
+              <span class="flex items-center space-x-1.5"><span class="w-3 h-3 rounded-full bg-amber-400 inline-block"></span><span class="font-bold text-white">Over-voltage (&gt; 1.05 p.u.)</span></span>
+            </div>
+            <span class="text-cyan-300 font-bold">Cyan Ring = DG Active</span>
+          </div>
+
+        </div>
+
+      </div>
+
+    </section>
+
+    <!-- Symmetrical Analytics Grid: Aligned Chart.js Visualizations (2x2 Uniform Layout) -->
+    <section class="space-y-3">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-base font-bold text-white uppercase tracking-wider">Feeder Analytics & Performance Profiling</h2>
+          <p class="text-xs text-slate-300">Real-time comparison between base feeder conditions and active distributed generation</p>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+        <!-- Chart Card 1: Bus Voltage Profile -->
+        <div class="glass-panel p-4 flex flex-col justify-between">
+          <div class="flex items-center justify-between mb-2">
+            <div>
+              <h3 class="text-xs font-bold text-white uppercase tracking-wider">Voltage Profile Across Feeder Buses</h3>
+              <p class="text-xs text-slate-300">Magnitude (|V| in p.u.) with statutory operating limits</p>
+            </div>
+            <span class="text-xs font-mono font-bold px-2 py-0.5 rounded bg-slate-800 text-cyan-300 border border-slate-700">Buses 1 - 33</span>
+          </div>
+          <div class="chart-box">
+            <canvas id="voltage-chart"></canvas>
+          </div>
+        </div>
+
+        <!-- Chart Card 2: Branch Power Losses -->
+        <div class="glass-panel p-4 flex flex-col justify-between">
+          <div class="flex items-center justify-between mb-2">
+            <div>
+              <h3 class="text-xs font-bold text-white uppercase tracking-wider">Branch Power Losses</h3>
+              <p class="text-xs text-slate-300">Technical active (kW) and reactive (kVAR) series dissipation</p>
+            </div>
+            <span class="text-xs font-mono font-bold px-2 py-0.5 rounded bg-slate-800 text-cyan-300 border border-slate-700">32 Branches</span>
+          </div>
+          <div class="chart-box">
+            <canvas id="loss-chart"></canvas>
+          </div>
+        </div>
+
+        <!-- Chart Card 3: Technical Loss Distribution -->
+        <div class="glass-panel p-4 flex flex-col justify-between">
+          <div class="flex items-center justify-between mb-2">
+            <div>
+              <h3 class="text-xs font-bold text-white uppercase tracking-wider">Feeder Technical Loss Allocation</h3>
+              <p class="text-xs text-slate-300">Proportional active loss distribution by branch segment</p>
+            </div>
+            <span class="text-xs font-mono font-bold px-2 py-0.5 rounded bg-slate-800 text-cyan-300 border border-slate-700">Top Loss Lines</span>
+          </div>
+          <div class="chart-box">
+            <canvas id="loss-dist-chart"></canvas>
+          </div>
+        </div>
+
+        <!-- Chart Card 4: Voltage Phase Angle Distribution -->
+        <div class="glass-panel p-4 flex flex-col justify-between">
+          <div class="flex items-center justify-between mb-2">
+            <div>
+              <h3 class="text-xs font-bold text-white uppercase tracking-wider">Voltage Phase Angle Deviation</h3>
+              <p class="text-xs text-slate-300">Nodal phasor displacement (&theta; in degrees relative to slack bus)</p>
+            </div>
+            <span class="text-xs font-mono font-bold px-2 py-0.5 rounded bg-slate-800 text-cyan-300 border border-slate-700">Ref: 0.00&deg;</span>
+          </div>
+          <div class="chart-box">
+            <canvas id="angle-chart"></canvas>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- Comprehensive Data Inspector Tables -->
+    <section class="glass-panel p-5 space-y-4">
+      <div class="border-b border-slate-700/80 pb-3 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 class="text-sm font-bold text-white uppercase tracking-wider">Electrical System State & Line Data</h2>
+          <p class="text-xs text-slate-300">Full numerical dataset for IEEE 33-bus radial distribution network</p>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+        <!-- Bus Data Table -->
+        <div class="space-y-2">
+          <div class="text-xs font-bold text-white uppercase tracking-wider">Nodal Electrical Quantities</div>
+          <div class="overflow-x-auto max-h-72 overflow-y-auto border border-slate-700 rounded-lg">
+            <table class="w-full text-left border-collapse">
+              <thead class="bg-slate-900 text-slate-200 font-mono text-xs sticky top-0 border-b border-slate-700">
+                <tr>
+                  <th class="py-2.5 px-3">Bus</th>
+                  <th class="py-2.5 px-3">P (kW)</th>
+                  <th class="py-2.5 px-3">Q (kVAR)</th>
+                  <th class="py-2.5 px-3">DG (kW)</th>
+                  <th class="py-2.5 px-3">|V| (p.u.)</th>
+                  <th class="py-2.5 px-3">&theta; (&deg;)</th>
+                  <th class="py-2.5 px-3">V (kV)</th>
+                  <th class="py-2.5 px-3">Status</th>
+                </tr>
+              </thead>
+              <tbody id="bus-table-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Branch Data Table -->
+        <div class="space-y-2">
+          <div class="text-xs font-bold text-white uppercase tracking-wider">Branch Flow & Technical Losses</div>
+          <div class="overflow-x-auto max-h-72 overflow-y-auto border border-slate-700 rounded-lg">
+            <table class="w-full text-left border-collapse">
+              <thead class="bg-slate-900 text-slate-200 font-mono text-xs sticky top-0 border-b border-slate-700">
+                <tr>
+                  <th class="py-2.5 px-3">Br</th>
+                  <th class="py-2.5 px-3">Nodes</th>
+                  <th class="py-2.5 px-3">R (&Omega;)</th>
+                  <th class="py-2.5 px-3">X (&Omega;)</th>
+                  <th class="py-2.5 px-3">R/X</th>
+                  <th class="py-2.5 px-3">|I| (p.u.)</th>
+                  <th class="py-2.5 px-3">P Loss (kW)</th>
+                  <th class="py-2.5 px-3">Q Loss (kVAR)</th>
+                </tr>
+              </thead>
+              <tbody id="branch-table-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- Mathematical Foundation Section -->
+    <section class="glass-panel p-5 space-y-3">
+      <h3 class="text-xs font-bold text-slate-200 uppercase tracking-wider">Backward/Forward Sweep (BFS) Mathematical Solver Reference</h3>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs font-mono text-slate-200">
+        <div class="p-3 bg-slate-950 border border-slate-700/80 rounded-lg space-y-1">
+          <div class="font-bold text-cyan-300">1. Backward Sweep (Currents)</div>
+          <p class="text-slate-300 text-xs">Traversing from leaf nodes to substation:</p>
+          <div class="bg-slate-900 p-2 rounded text-white font-bold mt-1 border border-slate-800">I_m = ((P_m - jQ_m) / V_m)*</div>
+          <p class="text-slate-300 text-xs">Branch current equals downstream bus loads aggregated iteratively.</p>
+        </div>
+        <div class="p-3 bg-slate-950 border border-slate-700/80 rounded-lg space-y-1">
+          <div class="font-bold text-cyan-300">2. Forward Sweep (Voltages)</div>
+          <p class="text-slate-300 text-xs">Traversing from substation to terminal buses:</p>
+          <div class="bg-slate-900 p-2 rounded text-white font-bold mt-1 border border-slate-800">V_m = V_k - I_km &middot; (R_km + jX_km)</div>
+          <p class="text-slate-300 text-xs">Nodal voltages updated from predecessor bus voltage drop.</p>
+        </div>
+        <div class="p-3 bg-slate-950 border border-slate-700/80 rounded-lg space-y-1">
+          <div class="font-bold text-cyan-300">3. Convergence Criterion</div>
+          <p class="text-slate-300 text-xs">Iterative maximum absolute voltage variation:</p>
+          <div class="bg-slate-900 p-2 rounded text-white font-bold mt-1 border border-slate-800">max |V^(iter+1) - V^(iter)| &lt; 1e-5</div>
+          <p class="text-slate-300 text-xs">Tolerates high R/X radial feeders with zero ill-conditioning.</p>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="border-t border-slate-800 bg-slate-950 py-4 mt-8">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-300">
+      <div>GridVision &middot; Electrical Distribution Network Power Flow Analyzer &middot; IEEE 33-Bus Radial System</div>
+      <div class="mt-2 sm:mt-0 font-mono text-cyan-300">Flask &middot; Leaflet &middot; Tailwind CSS &middot; Chart.js &middot; NumPy BFS Solver</div>
+    </div>
+  </footer>
+
+  <!-- Toast Container -->
+  <div id="toast" class="opacity-0 pointer-events-none"></div>
+
+  <!-- Main Application Script (v2.7) -->
+  <script src="/static/js/app.js?v=2.7"></script>
+</body>
+</html>
