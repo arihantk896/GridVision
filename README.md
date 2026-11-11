@@ -1,192 +1,132 @@
 # GridVision — Distribution Network Intelligence Platform
 
-### IEEE 33-Bus Radial Distribution Power Flow & DG Analyzer
+**IEEE 33-Bus Radial Distribution Power Flow & DG Analyzer**
 
-GridVision is a power-system analysis tool that implements the **Backward/Forward Sweep (BFS) load-flow algorithm** using NumPy. It provides a Flask REST API and an interactive dark-themed dashboard built with HTML, CSS, JavaScript, Tailwind CSS, Chart.js, and Leaflet.
+A fully self-contained power-systems tool that implements the Backward/Forward Sweep (BFS) load-flow algorithm from scratch using NumPy, exposes it via a Flask REST API, and renders an interactive dark-theme dashboard in pure HTML / CSS / JavaScript (Tailwind CSS · Chart.js · Leaflet).
+
+---
 
 ## Quick Start
 
-### 1. Clone or download the repository
-
 ```powershell
-cd "course project"
-```
+# 1 — Enter project directory
+cd "C:\Users\soham\OneDrive\Documents\SEM 3\DM\course project"
 
-### 2. Create and activate a virtual environment
-
-```powershell
+# 2 — Create & activate the virtual environment (first time only)
 python -m venv .venv
-.venv\Scripts\activate
+.venv\Scripts\pip install -r requirements.txt
+
+# 3 — Validate the BFS solver (all 5 benchmark checks must say PASS)
+.venv\Scripts\python validate_solver.py
+
+# 4 — Launch GridVision
+.venv\Scripts\python server.py
 ```
 
-### 3. Install dependencies
+Open your browser → **http://localhost:5000**
 
-```powershell
-pip install -r requirements.txt
+> **Note:** if you already ran `.venv\Scripts\pip install -r requirements.txt` once, just run step 4.
+
+---
+
+## Validated Benchmark Results (IEEE 33-Bus Base Case)
+
+| Metric | Value | Standard Reference |
+|---|---|---|
+| Converged | **True** | — |
+| Iterations | **5** | ≤ 30 |
+| Total Active Loss | **202.68 kW** | ~202 kW |
+| Total Reactive Loss | **135.14 kVAR** | — |
+| Min Voltage | **0.9131 p.u.** | ~0.913 p.u. |
+| Min Voltage Bus | **Bus 18** | Bus 18 |
+| Under-voltage buses | **21** (V < 0.95 p.u.) | — |
+| With 500 kW DG @ Bus 18 | **153.42 kW loss** | −24 % reduction |
+
+---
+
+## Project File Map
+
 ```
-
-### 4. Validate the BFS solver
-
-```powershell
-python validate_solver.py
-```
-
-### 5. Launch GridVision
-
-```powershell
-python server.py
-```
-
-Open your browser and visit:
-
-**http://localhost:5000**
-
-## Validated Benchmark Results
-
-### IEEE 33-Bus Base Case
-
-| Metric | Result |
-|---|---:|
-| Convergence | True |
-| Iterations | 5 |
-| Active Power Loss | 202.68 kW |
-| Reactive Power Loss | 135.14 kVAR |
-| Minimum Voltage | 0.9131 p.u. |
-| Minimum Voltage Bus | Bus 18 |
-| Under-voltage Buses | 21 |
-
-### DG Simulation
-
-| Configuration | Active Power Loss |
-|---|---:|
-| Base Case | 202.68 kW |
-| 500 kW DG at Bus 18 | 153.42 kW |
-
-**Reported loss reduction: approximately 24%.**
-
-## Project Structure
-
-```text
-course-project/
-├── bfs_solver.py          # Backward/Forward Sweep algorithm
-├── ieee33_data.py         # IEEE 33-Bus network data
-├── analytics.py           # Network analysis and DG management
-├── server.py              # Flask REST API
-├── validate_solver.py     # Solver validation
+course project/
+├── bfs_solver.py          # BFS power flow algorithm (NumPy, from scratch)
+├── ieee33_data.py         # IEEE 33-bus bus & branch impedance data
+├── analytics.py           # NetworkAnalyzer: violations, DG, DataFrames
+├── server.py              # Flask REST API + static file server
+├── validate_solver.py     # Benchmark validation script
 ├── requirements.txt       # Python dependencies
+├── backup_pre_cleanup.zip # Pre-cleanup archive backup
 ├── frontend/
-│   ├── index.html
+│   ├── index.html         # Single-page dashboard (Tailwind CSS)
 │   ├── css/
-│   │   ├── style.css
-│   │   └── leaflet.css
+│   │   ├── style.css      # Custom dark-obsidian theme
+│   │   └── leaflet.css    # Leaflet map styles (local, no CDN)
 │   └── js/
-│       ├── app.js
-│       ├── chart.umd.min.js
-│       └── leaflet.js
-└── README.md
+│       ├── app.js         # All dashboard logic (Chart.js, Leaflet, API)
+│       ├── chart.umd.min.js  # Chart.js v4 (local, no CDN)
+│       └── leaflet.js     # Leaflet v1 (local, no CDN)
+└── .venv/                 # Python virtual environment
 ```
 
-## BFS Algorithm
+---
 
-**1. Backward Sweep:** Calculates branch currents from leaf nodes towards the substation.
+## BFS Algorithm Reference
 
-\[
-I_m = \operatorname{conj}\left(\frac{P_m-jQ_m}{V_m}\right)
-\]
+**Backward Sweep** — branch currents from leaf nodes to substation:
+```
+I_m = conj( (P_m − jQ_m) / V_m )
+```
 
-**2. Forward Sweep:** Calculates bus voltages from the substation towards the leaf nodes.
+**Forward Sweep** — nodal voltages from substation outward:
+```
+V_m = V_k − I_km · (R_km + jX_km)
+```
 
-\[
-V_m = V_k-I_{km}(R_{km}+jX_{km})
-\]
+**Convergence criterion:**
+```
+max |V^(iter+1) − V^(iter)| < 1e-5
+```
 
-**3. Convergence Criterion:**
+Specifically designed for high R/X radial distribution feeders where Newton-Raphson diverges.
 
-\[
-\max |V^{(iter+1)}-V^{(iter)}| < 10^{-5}
-\]
-
-The algorithm iteratively updates current and voltage values until the convergence condition is satisfied.
+---
 
 ## Dashboard Features
 
-| Feature | Description |
+| Section | Description |
 |---|---|
-| KPI Dashboard | Load, DG output, power losses and voltage violations |
-| DG Injection | Configure DG power at buses 2–33 |
-| Network Topology | Interactive network visualization |
-| Voltage Profile | Compare base and DG scenario voltage profiles |
-| Branch Losses | Visualize active and reactive losses |
-| Loss Allocation | Branch-wise active loss distribution |
-| Phase Angle | Display bus voltage phase angles |
-| Bus & Branch Tables | Detailed electrical parameters |
-| Math Reference | Important BFS equations |
+| KPI Ribbon | Total load, DG output, active/reactive losses, min voltage, violation count |
+| DG Injection Station | Select any bus (2–33), set P (0–1000 kW) and Q (−300–+300 kVAR) with sliders, apply presets |
+| Network Topology | Leaflet geographic map **or** SVG schematic — click any bus node to select it |
+| Voltage Profile Chart | Line chart: base case vs active scenario with ±5 % statutory limits |
+| Branch Losses Chart | Grouped bar chart of P_loss and Q_loss per branch |
+| Loss Allocation Donut | Proportional breakdown of active losses by branch segment |
+| Phase Angle Chart | Nodal voltage phase angles relative to slack bus |
+| Bus / Branch Tables | Full numerical dataset: |V|, ∠V, DG, losses, R/X ratio, current magnitude |
+| Math Reference | BFS equations displayed inline |
 
-## REST API
+---
+
+## API
 
 ### `POST /api/solve`
 
-**Request:**
-
+**Request body:**
 ```json
 {
   "dg": [
-    {
-      "bus_id": 18,
-      "p_kw": 500,
-      "q_kvar": 0
-    }
+    { "bus_id": 18, "p_kw": 500, "q_kvar": 0 }
   ],
   "v_min": 0.95,
   "v_max": 1.05
 }
 ```
 
-**Response Structure:**
-
+**Response:**
 ```json
 {
-  "current": {
-    "nodes": [],
-    "edges": [],
-    "metrics": {}
-  },
-  "base": {
-    "nodes": [],
-    "edges": [],
-    "metrics": {}
-  }
+  "current": { "nodes": [...], "edges": [...], "metrics": {...} },
+  "base":    { "nodes": [...], "edges": [...], "metrics": {...} }
 }
 ```
 
-- `current`: Results for the active DG scenario.
-- `base`: Reference results without DG injection.
-
-## Technologies Used
-
-- **Backend:** Python, Flask, NumPy
-- **Frontend:** HTML, CSS, JavaScript, Tailwind CSS
-- **Visualization:** Chart.js, Leaflet
-- **Network Analysis:** Graph Theory and NetworkX
-
-## Discrete Mathematics Concepts
-
-This project demonstrates practical applications of:
-
-- Graph Theory
-- Trees and Rooted Trees
-- Breadth-First Search (BFS)
-- Tree Traversal
-- Paths and Connectivity
-- Relations
-- Sequences and Convergence
-- Complex Numbers
-- Set Partitioning and Logic
-
-## Project Objective
-
-GridVision demonstrates how mathematical concepts and computational algorithms can be applied to real-world electrical distribution networks. It provides an interactive environment to analyse voltage stability, identify power losses, and study the impact of Distributed Generation.
-
----
-
-**GridVision — Connecting Discrete Mathematics with Real-World Power System Analysis.**
+`current` reflects the scenario with DG active; `base` is always the no-DG reference.

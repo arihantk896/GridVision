@@ -1,0 +1,9 @@
+# GridVision — Distribution Network Intelligence Platform
+# Python dependencies for the BFS solver + Flask REST backend
+# Install: pip install -r requirements.txt
+#          (or use the project venv: .venv\Scripts\pip install -r requirements.txt)
+
+numpy>=1.24.0
+flask>=3.0.0
+networkx>=3.2.0
+pandas>=2.1.0
